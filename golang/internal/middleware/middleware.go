@@ -23,9 +23,11 @@ type Middleware interface {
 	//cada mensaje de datos o de control con el cuerpo del mensaje.
 	//callbackFunc tiene como parámetro:
 	// msg - El struct tal y como lo recibe el método Send.
+	// ack - Una función que hace ACK del mensaje recibido.
+	// nack - Una función que hace NACK del mensaje recibido.
 	//Si se pierde la conexión con el middleware devuelve ErrMessageMiddlewareDisconnected.
 	//Si ocurre un error interno que no puede resolverse devuelve ErrMessageMiddlewareMessage.
-	StartConsuming(callbackFunc func(msg Message)) (err error)
+	StartConsuming(callbackFunc func(msg Message, ack func(), nack func())) (err error)
 
 	//Si se estaba consumiendo desde la cola/exchange, se detiene la escucha. Si
 	//no se estaba consumiendo de la cola/exchange, no tiene efecto, ni levanta

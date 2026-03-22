@@ -197,7 +197,12 @@ func DoTestQueue(
 		consumers = append(consumers, middleware)
 		numConsumersByQueue[consumerOpts.QueueName] += 1
 
-		go middleware.StartConsuming(func(msg m.Message) { msgsFanIn <- msg.Body })
+		forwardToChannel := func(msg m.Message, ack func(), nack func()) {
+			msgsFanIn <- msg.Body
+			ack()
+		}
+
+		go middleware.StartConsuming(forwardToChannel)
 	}
 
 	// Act
