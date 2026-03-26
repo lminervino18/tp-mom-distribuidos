@@ -14,7 +14,7 @@ Al momento de la evaluación y ejecución de las pruebas se **descartarán** los
 
 **Python:** `/python/src/common/middleware/middleware_rabbitmq.py` 
 
-**Golang:** `/golang/internal/factory/factory.go` 
+**Golang:** `/golang/internal/factory/*/*.go` 
 
 ## Ejecución
 
