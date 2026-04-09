@@ -118,12 +118,14 @@ class _RabbitMQMiddlewareBase:
                 last_exc = exc
                 self._best_effort_cleanup()
 
+        assert last_exc is not None
         _raise_runtime_error(last_exc)
 
     def _redeclare_topology(self) -> None:
         raise NotImplementedError
 
     def _reconnect(self) -> None:
+        assert not self._closed
         if self._closed:
             raise MessageMiddlewareDisconnectedError()
 
@@ -132,6 +134,7 @@ class _RabbitMQMiddlewareBase:
         self._redeclare_topology()
 
     def _ensure_connection(self) -> None:
+        assert not self._closed
         if self._closed:
             raise MessageMiddlewareDisconnectedError()
 
@@ -145,6 +148,7 @@ class _RabbitMQMiddlewareBase:
             return
 
         try:
+            assert self.connection is not None
             self.channel = self.connection.channel()
         except Exception as exc:
             if _is_disconnect_error(exc):
@@ -160,11 +164,13 @@ class _RabbitMQMiddlewareBase:
 
         try:
             # Se usa un canal dedicado de publicación para no mezclar confirms y publish
+            assert self.connection is not None
             self._publish_channel = self.connection.channel()
             self._publish_channel.confirm_delivery()
         except Exception as exc:
             if _is_disconnect_error(exc):
                 self._reconnect()
+                assert self.connection is not None
                 self._publish_channel = self.connection.channel()
                 self._publish_channel.confirm_delivery()
                 return
@@ -183,6 +189,7 @@ class _RabbitMQMiddlewareBase:
             _raise_runtime_error(exc)
 
     def _prepare_consumer(self, queue_name: str, on_message_callback) -> None:
+        assert not self._consuming
         if self._consuming:
             raise MessageMiddlewareMessageError()
 
@@ -194,6 +201,7 @@ class _RabbitMQMiddlewareBase:
 
         try:
             # Prefetch 1 prioriza fairnes (decisión de trhoughput)
+            assert self.channel is not None
             self.channel.basic_qos(prefetch_count=_PREFETCH_COUNT)
             self._consumer_tag = self.channel.basic_consume(
                 queue=queue_name,
@@ -206,6 +214,7 @@ class _RabbitMQMiddlewareBase:
     def _run_consumer_loop(self) -> None:
         self._consuming = True
         try:
+            assert self.channel is not None
             self.channel.start_consuming()
         except Exception as exc:
             if isinstance(exc, AMQPError):
@@ -219,6 +228,7 @@ class _RabbitMQMiddlewareBase:
         def operation():
             self._ensure_publish_channel()
             # mandatory=True hace visible el caso unroutable
+            assert self._publish_channel is not None
             self._publish_channel.basic_publish(
                 exchange=exchange,
                 routing_key=routing_key,
@@ -237,6 +247,7 @@ class _RabbitMQMiddlewareBase:
         self._ensure_consumer_channel()
 
         try:
+            assert self.channel is not None
             self.channel.stop_consuming()
         except Exception as exc:
             _raise_runtime_error(exc)
@@ -299,6 +310,7 @@ class MessageMiddlewareQueueRabbitMQ(
 
     def _redeclare_topology(self) -> None:
         self._ensure_consumer_channel()
+        assert self.channel is not None
         self.channel.queue_declare(queue=self.queue_name, durable=True)
 
     def start_consuming(self, on_message_callback):
@@ -324,6 +336,7 @@ class MessageMiddlewareExchangeRabbitMQ(
 
     def _declare_exchange(self) -> None:
         self._ensure_consumer_channel()
+        assert self.channel is not None
         self.channel.exchange_declare(
             exchange=self.exchange_name,
             exchange_type="direct",
@@ -331,10 +344,12 @@ class MessageMiddlewareExchangeRabbitMQ(
         )
 
     def _create_and_bind_consumer_queue(self) -> None:
+        assert self.routing_keys
         if not self.routing_keys:
             raise MessageMiddlewareMessageError()
 
         self._ensure_consumer_channel()
+        assert self.channel is not None
         result = self.channel.queue_declare(queue="", exclusive=True)
         self.queue_name = result.method.queue
 
@@ -362,6 +377,7 @@ class MessageMiddlewareExchangeRabbitMQ(
     def start_consuming(self, on_message_callback):
         self._ensure_consumer_queue()
 
+        assert self.queue_name is not None
         if self.queue_name is None:
             raise MessageMiddlewareMessageError()
 
@@ -369,6 +385,7 @@ class MessageMiddlewareExchangeRabbitMQ(
         self._run_consumer_loop()
 
     def send(self, message):
+        assert self.routing_keys
         if not self.routing_keys:
             raise MessageMiddlewareMessageError()
 

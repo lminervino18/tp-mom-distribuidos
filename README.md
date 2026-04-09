@@ -2,40 +2,43 @@
 
 ## Descripción
 
-Implementación de dos clases wrapper sobre `pika` para simplificar la comunicación con RabbitMQ:
+Implementación de dos wrappers sobre `pika` para exponer una interfaz simplificada de RabbitMQ:
 
-- **MessageMiddlewareQueueRabbitMQ**: Work Queue (distribución de trabajo)
-- **MessageMiddlewareExchangeRabbitMQ**: Pub/Sub con routing (broadcast selectivo)
+- **MessageMiddlewareQueueRabbitMQ**: Work Queue
+- **MessageMiddlewareExchangeRabbitMQ**: Exchange con routing por clave
 
-## Patrones Implementados
+## Patrones implementados
 
 ### Work Queue
-Cola compartida donde múltiples consumidores distribuyen la carga. Cada mensaje es procesado por un único consumidor.
+Cola compartida donde múltiples consumidores distribuyen la carga. Cada mensaje es entregado a un único consumidor y requiere confirmación explícita.
 
+### Exchange
+Exchange tipo `direct` donde cada consumidor crea su propia cola exclusiva y la bindea a sus `routing_keys`. Un mensaje publicado se envía a todas las routing keys con las que fue inicializada la instancia.
 
-### Pub/Sub (Exchange)
-Exchange tipo `topic` donde cada consumidor tiene su propia cola temporal. Un mensaje puede llegar a múltiples consumidores según patrones de ruteo.
+## Decisiones de diseño
 
-## Decisiones de Diseño
+**Abstracción de callbacks:** los callbacks internos de `pika` se adaptan a la forma `(message, ack, nack)` para ocultar detalles de AMQP.
 
-**Abstracción de callbacks:** Los callbacks de `pika` (4 parámetros) se simplifican a `(message, ack, nack)`. El usuario recibe el mensaje y funciones para confirmar/rechazar sin conocer detalles del protocolo AMQP.
+**ACK manual:** se deshabilita `auto_ack` para que la confirmación o rechazo de cada mensaje quede bajo control explícito del consumidor.
 
-**ACK manual obligatorio:** Se deshabilitó ACK automático para permitir control explícito del procesamiento y evitar pérdida de mensajes ante fallos.
+**Separación entre publicación y consumo en Exchange:** la cola exclusiva del consumidor se crea recién al comenzar a escuchar, evitando declarar colas y bindings innecesarios del lado publisher.
 
-**Colas exclusivas en Exchange:** Cada consumidor crea su propia cola temporal que se elimina automáticamente al desconectar. Garantiza que todos los interesados reciban el mensaje (broadcast).
+**Prefetch bajo:** `prefetch_count=1` prioriza reparto equilibrado entre consumidores en los tests de work queue.
 
-**QoS balanceado:** `prefetch_count=1` asegura que los consumidores rápidos procesen más mensajes que los lentos.
+**Publicación confiable:** los mensajes se publican con publisher confirms y `mandatory=True`, para no asumir silenciosamente que fueron aceptados y enroutados.
+
+**Reconexión simple:** ante fallos de conexión durante publicación se realiza un reintento acotado con backoff corto y re-declaración de la topología.
+
+## Invariantes y precondiciones
+
+- `send()` en `Exchange` requiere al menos una `routing_key`.
+- `start_consuming()` no debe invocarse dos veces en paralelo sobre la misma instancia.
+- Luego de `close()`, la instancia no vuelve a ser utilizable.
+- En `Exchange`, cada consumidor recibe mensajes a través de su propia cola exclusiva.
 
 ## Ejecución
+
 ```bash
-# Ejecutar tests con Docker
 make up
-
-# Ver logs
 make logs
-
-# Detener
 make down
-```
-
-**Resultado esperado:** 19/19 tests pasados (13 Queue + 6 Exchange).
