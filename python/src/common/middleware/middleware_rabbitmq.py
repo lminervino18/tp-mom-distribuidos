@@ -326,7 +326,7 @@ class MessageMiddlewareExchangeRabbitMQ(
         self._ensure_consumer_channel()
         self.channel.exchange_declare(
             exchange=self.exchange_name,
-            exchange_type="topic",
+            exchange_type="direct",
             durable=True,
         )
 
